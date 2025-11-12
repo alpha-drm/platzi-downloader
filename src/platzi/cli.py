@@ -6,6 +6,8 @@ from typing_extensions import Annotated
 
 from platzi import AsyncPlatzi, Cache
 
+from .utils import validate_course_url
+
 app = typer.Typer(rich_markup_mode="rich")
 
 
@@ -73,7 +75,7 @@ def download(
     Example:
         platzi download https://platzi.com/cursos/python/
     """
-    asyncio.run(_download(url, quality=quality, overwrite=overwrite))
+    asyncio.run(_download(validate_course_url(url), quality=quality, overwrite=overwrite))
 
 
 @app.command()
