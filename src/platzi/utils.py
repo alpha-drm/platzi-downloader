@@ -95,6 +95,41 @@ def get_subtitles_url(content: str) -> list[str] | None:
     return matches  # returns a list of all found subtitles without repeating
 
 
+def ensure_filename_length(
+    filename: str, base_path: Path, max_total_length: int = 250
+) -> str:
+    """
+    Ensure that the complete file path (base_path / filename) does not exceed
+    the specified `max_total_length`.
+
+    If the combined path length exceeds the limit, the filename will be truncated
+    (from the end) so that the total path fits within the allowed size.
+    The base path itself is not modified.
+
+    :param filename: The proposed file name (with extension, if any).
+    :param base_path: The directory path in which the file will reside.
+    :param max_total_length: The maximum allowed length of the full path string.
+    :return: A filename (possibly truncated) that ensures base_path / filename
+             does not exceed `max_total_length`.
+    """
+    resolved_base = base_path.resolve()
+    full_path = resolved_base / filename
+
+    full_path_str = str(full_path)
+    if len(full_path_str) <= max_total_length:
+        return filename
+
+    base_str = (
+        len(str(resolved_base)) + 1
+    )  # +1 for the path separator joining base_path and filename
+    available_for_name = max_total_length - base_str
+    if available_for_name <= 0:
+        # No space left for filename; return an empty string or raise an error
+        return ""
+    truncated = filename[:available_for_name].rstrip()
+    return truncated
+
+
 @retry()
 async def download(url: str, path: Path, **kwargs):
     overwrite = kwargs.get("overwrite", False)
