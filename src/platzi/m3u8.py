@@ -9,10 +9,32 @@ from pathlib import Path
 
 import aiofiles
 import rnet
+from fake_useragent import UserAgent
 from tqdm.asyncio import tqdm
 
-from .constants import HEADERS
 from .helpers import retry
+
+
+def _build_headers() -> dict[str, str]:
+    """
+    Build HTTP headers for web requests, including a randomized User-Agent.
+
+    :return: A dictionary of header names to header values.
+    """
+    ua = UserAgent()
+    headers = {
+        "User-Agent": ua.random,
+        "Referer": "https://platzi.com/",
+        "Accept": "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
+        "Accept-Language": "es-ES, es;q=0.8, en-US;q=0.5, en;q=0.3",
+        "Connection": "keep-alive",
+        "Host": "mediastream.platzi.com",
+        "Origin": "https://platzi.com",
+    }
+    return headers
+
+
+headers = _build_headers()
 
 
 def ffmpeg_required(func):
@@ -56,7 +78,7 @@ async def _ts_dl(url: str, path: Path, **kwargs):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=HEADERS)
+    response: rnet.Response = await client.get(url, headers=headers)
 
     try:
         if not response.ok:
@@ -123,7 +145,7 @@ async def _m3u8_dl(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=HEADERS)
+    response: rnet.Response = await client.get(url, headers=headers)
 
     try:
         if not response.ok:
@@ -211,7 +233,7 @@ async def m3u8_dl(
         return
 
     client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=HEADERS)
+    response: rnet.Response = await client.get(url, headers=headers)
 
     try:
         if not response.ok:
