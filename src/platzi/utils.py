@@ -1,6 +1,7 @@
 import asyncio
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiofiles
 import rnet
@@ -128,6 +129,32 @@ def ensure_filename_length(
         return ""
     truncated = filename[:available_for_name].rstrip()
     return truncated
+
+
+def validate_course_url(url: str) -> str:
+    """
+    Given a full course URL from platzi.com, returns the base course URL
+    (i.e., up to the course slug, including trailing slash).
+    E.g.:
+      "https://platzi.com/cursos/go/caracteristicas-y-ventajas-del-lenguaje/"
+    returns:
+      "https://platzi.com/cursos/go/"
+
+    :param url: The full URL of the course.
+    :return: The base course URL if valid, otherwise raises ValueError.
+    """
+    # Optional: parse URL to ensure scheme and netloc
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"Invalid URL scheme or domain: {url!r}")
+
+    # Pattern: match exactly https://platzi.com/cursos/<slug>/
+    pattern = r"^(https://platzi\.com/cursos/[^/]+/)"
+    match = re.match(pattern, url)
+    if not match:
+        raise ValueError(f"URL does not match expected course pattern: {url!r}")
+
+    return match.group(1)
 
 
 @retry()
