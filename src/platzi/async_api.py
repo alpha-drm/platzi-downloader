@@ -12,12 +12,12 @@ from rich.live import Live
 from rich.table import Table
 
 from .collectors import get_course_title, get_draft_chapters, get_unit
-from .constants import HEADERS, LOGIN_DETAILS_URL, LOGIN_URL, SESSION_FILE
+from .constants import LOGIN_DETAILS_URL, LOGIN_URL, SESSION_FILE
 from .helpers import read_json, write_json
 from .logger import Logger
 from .m3u8 import m3u8_dl
 from .models import TypeUnit, User
-from .utils import clean_string, download, progressive_scroll
+from .utils import clean_string, download, ensure_filename_length, progressive_scroll
 
 
 def login_required(func):
@@ -184,24 +184,26 @@ class AsyncPlatzi:
             for jdx, draft_unit in enumerate(draft_chapter.units, 1):
                 unit = await get_unit(self.context, draft_unit.url)
                 file_name = f"{jdx:02}-{clean_string(unit.title)}"
+                file_name = ensure_filename_length(file_name, CHAP_DIR)
 
                 # download video
                 if unit.video:
                     dst = CHAP_DIR / f"{file_name}.mp4"
                     Logger.print(f"[{dst.name}]", "[DOWNLOADING-VIDEO]")
-                    await m3u8_dl(unit.video.url, dst, headers=HEADERS, **kwargs)
+                    await m3u8_dl(unit.video.url, dst, **kwargs)
 
                     # download subtitles
                     subs = unit.video.subtitles_url
                     if subs:
                         for sub in subs:
+                            s = sub.upper()
                             lang = (
                                 "_es"
-                                if "ES" in sub
+                                if "ES" in s
                                 else "_en"
-                                if "EN" in sub
+                                if "EN" in s
                                 else "_pt"
-                                if "PT" in sub
+                                if "PT" in s
                                 else ""
                             )
 
@@ -216,7 +218,10 @@ class AsyncPlatzi:
                         if files:
                             for archive in files:
                                 file_name = unquote(os.path.basename(archive))
-                                dst = CHAP_DIR / f"{jdx:02}-{file_name}"
+                                ext = Path(file_name).suffix
+                                file_name = ensure_filename_length(file_name, CHAP_DIR)
+
+                                dst = CHAP_DIR / f"{jdx:02}-{file_name}{ext}"
                                 Logger.print(f"[{dst.name}]", "[DOWNLOADING-FILES]")
                                 await download(archive, dst)
 
