@@ -91,7 +91,7 @@ Para descargar un curso de Platzi, usa el comando download seguido de la URL del
 platzi download URL [OPTIONS]
 
 OPTIONS:
-  --quality / -q  Specifies the video quality (default: max). Options: [1080|720].
+  --quality / -q  Specifies the video quality (default: 720). Options: [360|720|1080].
   --overwrite / -w  Overwrite files if exist.
 ```
 
@@ -102,7 +102,7 @@ platzi download https://platzi.com/cursos/python
 ```
 
 ```console
-platzi download https://platzi.com/cursos/python/ -q 720
+platzi download https://platzi.com/cursos/python/ -q 1080
 ```
 
 ```console
