@@ -6,6 +6,7 @@ from typing_extensions import Annotated
 
 from platzi import AsyncPlatzi, Cache
 
+from .models import Quality
 from .utils import validate_course_url
 
 app = typer.Typer(rich_markup_mode="rich")
@@ -42,17 +43,15 @@ def download(
             show_default=False,
         ),
     ],
-    # TODO: Define a Quality enum (e.g. 360p, 720p, 1080p,...)
-    # and use it here instead of str
     quality: Annotated[
-        str,
+        Quality,
         typer.Option(
             "--quality",
             "-q",
             help="The quality of the video to download.",
             show_default=True,
         ),
-    ] = "720",
+    ] = Quality.P720,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -75,7 +74,8 @@ def download(
     Example:
         platzi download https://platzi.com/cursos/python/
     """
-    asyncio.run(_download(validate_course_url(url), quality=quality, overwrite=overwrite))
+    url = validate_course_url(url)
+    asyncio.run(_download(url, quality=quality, overwrite=overwrite))
 
 
 @app.command()
