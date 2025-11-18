@@ -195,19 +195,19 @@ class AsyncPlatzi:
                     # download subtitles
                     subs = unit.video.subtitles_url
                     if subs:
-                        for sub in subs:
-                            s = sub.upper()
+                        for i, sub in enumerate(subs):
+                            s = sub.lower()
                             lang = (
-                                "_es"
-                                if "ES" in s
-                                else "_en"
-                                if "EN" in s
-                                else "_pt"
-                                if "PT" in s
-                                else ""
+                                "es"
+                                if "es" in s
+                                else "en"
+                                if "en" in s
+                                else "pt"
+                                if "pt" in s
+                                else i + 1
                             )
 
-                            dst = CHAP_DIR / f"{file_name}{lang}.vtt"
+                            dst = CHAP_DIR / f"{file_name}_{lang}.vtt"
                             Logger.print(f"[{dst.name}]", "[DOWNLOADING-SUBS]")
                             await download(sub, dst, **kwargs)
 
