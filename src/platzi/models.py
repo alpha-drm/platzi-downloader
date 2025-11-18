@@ -62,3 +62,11 @@ class Course(BaseModel):
     url: str
     description: str | None = None
     chapters: list[Chapter]
+
+
+class Quality(str, Enum):
+    MAX = "max"
+    P1080 = "1080"
+    P720 = "720"
+    P360 = "360"
+    MIN = "min"
