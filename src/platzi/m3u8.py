@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Dict, List, Optional
 
 import aiofiles
 import rnet
@@ -13,6 +14,7 @@ from fake_useragent import UserAgent
 from tqdm.asyncio import tqdm
 
 from .helpers import retry
+from .models import Quality
 
 
 def _build_headers() -> dict[str, str]:
@@ -35,6 +37,54 @@ def _build_headers() -> dict[str, str]:
 
 
 headers = _build_headers()
+
+
+def _parse_m3u8_streams(m3u8_text: str) -> Optional[List[Dict[str, str]]]:
+    """
+    Parse an HLS master playlist (.m3u8) and extract available resolutions
+    and their corresponding stream URLs.
+
+    Args:
+        m3u8_text (str): Raw content of the .m3u8 file as text.
+
+    Returns:
+        Optional[List[Dict[str, str]]]: A list of dictionaries where each element contains:
+            - "resolution" (str): The video height extracted from "WxH" (e.g., "720").
+            - "url" (str): The variant playlist URL that follows the EXT-X-STREAM-INF tag.
+
+        Returns None if no streams could be extracted.
+    """
+    streams: List[Dict[str, str]] = []
+    lines = m3u8_text.splitlines()
+
+    for i, line in enumerate(lines):
+        line = line.strip()
+
+        # Look for resolution metadata inside EXT-X-STREAM-INF
+        if "RESOLUTION=" in line:
+            match = re.search(r"RESOLUTION=(\d+)x(\d+)", line)
+            if not match:
+                continue  # Skip malformed resolution lines
+
+            width, height = match.groups()
+
+            # Get the next line which should be the stream URL
+            next_index = i + 1
+            if next_index >= len(lines):
+                continue  # Avoid index error if malformed playlist
+
+            url = lines[next_index].strip()
+
+            # Avoid capturing commented lines
+            if url.startswith("#"):
+                continue
+
+            streams.append({
+                "resolution": height,
+                "url": url
+            })
+
+    return streams if streams else None
 
 
 def ffmpeg_required(func):
@@ -178,6 +228,8 @@ async def _m3u8_dl(
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
+    title = os.path.splitext(os.path.basename(path))[0]
+
     command = [
         "ffmpeg",
         "-f",
@@ -189,6 +241,8 @@ async def _m3u8_dl(
         "-c",
         "copy",
         "-y" if overwrite else "-n",
+        "-metadata", f"title={title}",
+        "-metadata", "comment=Downloaded with platzi-downloader (https://github.com/ivansaul/platzi-downloader)",
         path,
     ]
 
@@ -209,6 +263,7 @@ async def _m3u8_dl(
 async def m3u8_dl(
     url: str,
     path: str | Path,
+    quality: Quality = Quality.P720,
     **kwargs,
 ) -> None:
     """
@@ -217,14 +272,10 @@ async def m3u8_dl(
     :param url(str): The URL of the m3u8 file to download.
     :param path(str): The path to save the converted mp4 file.
     :param tmp_dir(str | Path): The directory to save the temporary files.
+    :param Quality quality: Quality of the video (default: Quality.P720).
     :param kwargs: Additional keyword arguments to pass to the requests client.
     :return: None
     """
-
-    # quality selection
-    quality = kwargs.get("quality", "720")
-
-    quality = 0 if quality == "720" else 1
 
     overwrite = kwargs.get("overwrite", False)
     path = path if isinstance(path, Path) else Path(path)
@@ -239,16 +290,21 @@ async def m3u8_dl(
         if not response.ok:
             raise Exception("Error downloading m3u8")
 
-        m3u8_urls = _extract_streaming_urls(
+        m3u8_urls = _parse_m3u8_streams(
             await response.text()
         )  # The .m3u8 link contains the video resolutions
 
         if not m3u8_urls:
             raise Exception("No m3u8 urls found")
 
+        for stream in m3u8_urls:
+            if stream["resolution"] == quality.value:
+                url_res = stream["url"]
+                break
+
         await _m3u8_dl(
-            m3u8_urls[int(quality)], path, **kwargs
-        )  # Here goes the video resolution [0]=1280; [1]=1920
+            url_res, path, **kwargs
+        )  # Here goes the url video resolution
 
     except Exception:
         raise
