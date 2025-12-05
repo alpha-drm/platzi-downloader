@@ -4,6 +4,7 @@ from playwright.async_api import BrowserContext, Page
 
 from .cache import Cache
 from .constants import PLATZI_URL
+from .logger import Logger
 from .models import Chapter, Resource, TypeUnit, Unit, Video
 from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
 
@@ -11,16 +12,39 @@ from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
 @Cache.cache_async
 async def get_course_title(page: Page) -> str:
     SELECTOR = "h1[class*='CourseHeader']"
-    EXCEPTION = Exception("No course title found")
+    EXCEPTION_MSG = "No course title found"
     try:
         title = await page.locator(SELECTOR).first.text_content()
         if not title:
-            raise EXCEPTION
-    except Exception:
-        await page.close()
-        raise EXCEPTION
+            raise Exception(EXCEPTION_MSG)
+    except Exception as e:
+        raise Exception(EXCEPTION_MSG) from e
 
     return title
+
+
+@Cache.cache_async
+async def get_course_metadata(page: Page):
+    PUBLICATION_DATE_SELECTOR = "p[class*='CoursePublicationDetails']"
+    COVER_IMAGE_SELECTOR = "[property='og:image']"
+    try:
+        element = await page.query_selector(COVER_IMAGE_SELECTOR)
+        cover_image_url = await element.get_attribute("content")
+
+        publication_date = await page.locator(
+            PUBLICATION_DATE_SELECTOR
+        ).first.text_content()
+
+        return {
+            "cover_image_url": cover_image_url,
+            "publication_date": publication_date.strip(),
+        }
+
+    except Exception as e:
+        Logger.warning(
+            f"The course metadata could not be extracted. {e.__class__.__name__}: {e}"
+        )
+        return {}
 
 
 @Cache.cache_async
@@ -79,9 +103,8 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
     TITLE_SELECTOR = "h1[class*='MaterialHeading']"
     EXCEPTION = Exception("Could not collect unit data")
 
-    # --- NEW CONSTANTS ----
-    SECTION_FILES = "//h4[normalize-space(text())='Archivos de la clase']"
-    SECTION_READING = "//h4[normalize-space(text())='Lecturas recomendadas']"
+    SECTION_FILES = "//span[normalize-space(text())='Archivos de la clase']"
+    SECTION_READING = "//span[normalize-space(text())='Lecturas recomendadas']"
     SECTION_LINKS = "a[class*='FilesAndLinks_Item']"
     BUTTON_DOWNLOAD_ALL = "a[class*='FilesTree__Download'][href][download]"
     SUMMARY_CONTENT_SELECTOR = "div[class*='Resources_Resources__Articlass--expanded']"
