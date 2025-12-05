@@ -11,7 +11,12 @@ from rich import box, print
 from rich.live import Live
 from rich.table import Table
 
-from .collectors import get_course_title, get_draft_chapters, get_unit
+from .collectors import (
+    get_course_metadata,
+    get_course_title,
+    get_draft_chapters,
+    get_unit,
+)
 from .constants import LOGIN_DETAILS_URL, LOGIN_URL, SESSION_FILE
 from .helpers import read_json, write_json
 from .logger import Logger
@@ -142,6 +147,20 @@ class AsyncPlatzi:
         # download directory
         DL_DIR = Path("Courses") / clean_string(course_title)
         DL_DIR.mkdir(parents=True, exist_ok=True)
+
+        metadata = await get_course_metadata(page)
+
+        cover_url = metadata.get("cover_image_url")
+        if cover_url:
+            ext = cover_url.split(".")[-1].split("?")[0]
+            file_path = DL_DIR / f"cover.{ext}"
+            await download(cover_url, file_path)
+
+        pub_date = metadata.get("publication_date")
+        if pub_date:
+            file_path = DL_DIR / f"{pub_date}.txt"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(pub_date)
 
         # save page as mhtml
         presentation_path = DL_DIR / "presentation.mhtml"
