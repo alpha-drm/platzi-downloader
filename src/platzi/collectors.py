@@ -3,7 +3,6 @@ import asyncio
 from playwright.async_api import BrowserContext, Page
 
 from .cache import Cache
-from .constants import PLATZI_URL
 from .logger import Logger
 from .models import Chapter, Resource, TypeUnit, Unit, Video
 from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
@@ -56,7 +55,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
 
         chapters: list[Chapter] = []
         for i in range(await locator.count()):
-            chapter_name = await locator.nth(i).locator("h2").first.text_content()
+            chapter_name = await locator.nth(i).locator("h3").first.text_content()
 
             if not chapter_name:
                 raise EXCEPTION
@@ -77,7 +76,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
                     Unit(
                         type=TypeUnit.VIDEO,
                         title=unit_title,
-                        url=PLATZI_URL + unit_url,
+                        url=unit_url,
                         slug=slugify(unit_title),
                     )
                 )
