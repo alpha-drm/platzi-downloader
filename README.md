@@ -87,12 +87,19 @@ platzi logout
 
 Para descargar un curso de Platzi, usa el comando download seguido de la URL del curso que deseas descargar. La URL puede encontrarse en la barra de direcciones al visualizar la página del curso en Platzi.
 
+También puedes descargar una lista de cursos, proporcionando un archivo de texto con una URL de curso por línea mediante la opción --file (-f). Cada curso será descargado de forma secuencial.
+
 ```console
-platzi download URL [OPTIONS]
+platzi download [URL] [OPTIONS]
 
 OPTIONS:
-  --quality / -q  Specifies the video quality (default: 720). Options: [360|720|1080].
-  --overwrite / -w  Overwrite files if exist.
+  -q, --quality     Specifies the video quality (default: 720).
+                    Options: [360 | 720 | 1080]
+
+  -w, --overwrite   Overwrite files if they already exist.
+
+  -f, --file        Path to a text file containing one course URL per line.
+                    When this option is used, the URL argument is optional.
 ```
 
 Ejemplos:
@@ -107,6 +114,10 @@ platzi download https://platzi.com/cursos/python/ -q 1080
 
 ```console
 platzi download https://platzi.com/cursos/python -w
+```
+
+```console
+platzi download --file courses.txt
 ```
 
 ### Borrar Caché
