@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 
 import typer
 from rich import print
@@ -37,12 +38,12 @@ def logout():
 @app.command()
 def download(
     url: Annotated[
-        str,
+        Optional[str],
         typer.Argument(
             help="The URL of the course to download",
             show_default=False,
         ),
-    ],
+    ] = None,
     quality: Annotated[
         Quality,
         typer.Option(
@@ -61,21 +62,49 @@ def download(
             show_default=True,
         ),
     ] = False,
+    file: Annotated[
+        Optional[str],
+        typer.Option(
+            "--file",
+            "-f",
+            help="Path to a text file containing one course URL per line.",
+            show_default=False,
+        ),
+    ] = None,
 ):
     """
-    Download a Platzi course from the given URL.
+    Download a Platzi course from the given URL, or multiple from a text file.
 
     Arguments:
-        url: str - The URL of the course to download.
+        url: str - The URL of the course to download (optional if --file is used).
 
     Usage:
         platzi download <url>
 
     Example:
         platzi download https://platzi.com/cursos/python/
+        platzi download --file courses_links.txt
     """
-    url = validate_course_url(url)
-    asyncio.run(_download(url, quality=quality, overwrite=overwrite))
+
+    urls = []
+
+    if file:
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                urls = [validate_course_url(line.strip()) for line in f if line.strip()]
+        except FileNotFoundError:
+            print(f"[red]Error:[/red] El archivo '{file}' no existe.")
+            raise typer.Exit(code=1)
+        except ValueError as e:
+            print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(code=1)
+    elif url:
+        urls = [validate_course_url(url)]
+    else:
+        print("[red]Error:[/red] Debes especificar una URL o usar --file.")
+        raise typer.Exit(code=1)
+
+    asyncio.run(_download(urls, quality=quality, overwrite=overwrite))
 
 
 @app.command()
@@ -100,6 +129,18 @@ async def _logout():
         await platzi.logout()
 
 
-async def _download(url: str, **kwargs):
+async def _download(urls: list[str], **kwargs):
     async with AsyncPlatzi() as platzi:
-        await platzi.download(url, **kwargs)
+        if not platzi.loggedin:
+            print("[red]ERROR:[/red] You must login first. Run `platzi login`.")
+            return
+
+        for url in urls:
+            try:
+                print(f"[bold green]Downloading:[/bold green] {url}")
+                print()
+                await platzi.download(url, **kwargs)
+                print("[bold blue]Download successfully completed.[/bold blue]")
+                print()
+            except Exception as e:
+                print(f"[red]Error downloading {url}:[/red] {str(e)}")
