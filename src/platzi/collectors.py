@@ -3,6 +3,7 @@ import asyncio
 from playwright.async_api import BrowserContext, Page
 
 from .cache import Cache
+from .constants import PLATZI_URL
 from .logger import Logger
 from .models import Chapter, Resource, TypeUnit, Unit, Video
 from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
@@ -76,7 +77,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
                     Unit(
                         type=TypeUnit.VIDEO,
                         title=unit_title,
-                        url=unit_url,
+                        url=PLATZI_URL + unit_url,
                         slug=slugify(unit_title),
                     )
                 )
