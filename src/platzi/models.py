@@ -66,7 +66,11 @@ class Course(BaseModel):
 
 class Quality(str, Enum):
     MAX = "max"
+    P1920 = "1920"
     P1080 = "1080"
+    P1280 = "1280"
     P720 = "720"
+    P854 = "854"
+    P480 = "480"
     P360 = "360"
     MIN = "min"
