@@ -297,17 +297,21 @@ async def m3u8_dl(
         if not m3u8_urls:
             raise Exception("No m3u8 urls found")
 
+        url_res = None
+
         for stream in m3u8_urls:
             if stream["resolution"] == quality.value:
                 url_res = stream["url"]
                 break
 
+        if url_res is None:
+            raise ValueError(
+                 f"Requested quality not found: {quality.value}"
+            )
+
         await _m3u8_dl(
             url_res, path, **kwargs
         )  # Here goes the url video resolution
-
-    except Exception:
-        raise
 
     finally:
         await response.close()
