@@ -79,10 +79,7 @@ def _parse_m3u8_streams(m3u8_text: str) -> Optional[List[Dict[str, str]]]:
             if url.startswith("#"):
                 continue
 
-            streams.append({
-                "resolution": height,
-                "url": url
-            })
+            streams.append({"resolution": height, "url": url})
 
     return streams if streams else None
 
@@ -241,8 +238,10 @@ async def _m3u8_dl(
         "-c",
         "copy",
         "-y" if overwrite else "-n",
-        "-metadata", f"title={title}",
-        "-metadata", "comment=Downloaded with platzi-downloader (https://github.com/ivansaul/platzi-downloader)",
+        "-metadata",
+        f"title={title}",
+        "-metadata",
+        "comment=Downloaded with platzi-downloader (https://github.com/ivansaul/platzi-downloader)",
         path,
     ]
 
@@ -305,13 +304,16 @@ async def m3u8_dl(
                 break
 
         if url_res is None:
+            available_resolutions = [
+                stream["resolution"] for stream in m3u8_urls if "resolution" in stream
+            ]
+
             raise ValueError(
-                 f"Requested quality not found: {quality.value}"
+                f"Requested quality not found: {quality.value}. "
+                f"Available resolutions: {', '.join(available_resolutions)}"
             )
 
-        await _m3u8_dl(
-            url_res, path, **kwargs
-        )  # Here goes the url video resolution
+        await _m3u8_dl(url_res, path, **kwargs)  # Here goes the url video resolution
 
     finally:
         await response.close()
