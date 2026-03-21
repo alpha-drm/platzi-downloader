@@ -8,6 +8,7 @@ from urllib.parse import unquote
 import aiofiles
 from playwright.async_api import BrowserContext, Page, async_playwright
 from rich import box, print
+from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
@@ -22,7 +23,13 @@ from .helpers import read_json, write_json
 from .logger import Logger
 from .m3u8 import m3u8_dl
 from .models import TypeUnit, User
-from .utils import clean_string, download, ensure_filename_length, progressive_scroll
+from .utils import (
+    clean_string,
+    download,
+    ensure_filename_length,
+    normalize_cookies,
+    progressive_scroll,
+)
 
 
 def login_required(func):
@@ -135,6 +142,36 @@ class AsyncPlatzi:
         Logger.info("Logged out successfully")
 
     @try_except_request
+    async def set_cookies(self, path: Path) -> None:
+        """
+        Load cookies from a JSON file and set them in the browser context.
+        Marks the client as authenticated if the cookies are valid. Saves state
+        """
+        try:
+            cookies = read_json(str(path))
+
+            if not isinstance(cookies, list):
+                Logger.error("The JSON file must contain a list of cookies.")
+                return
+
+            cleaned_cookies = normalize_cookies(cookies)
+
+            await self.context.add_cookies(cleaned_cookies)
+
+            await self._set_profile()
+
+            if self.loggedin:
+                await self._save_state()
+                Logger.info("Cookies imported, Logged in successfully!\n")
+            else:
+                Logger.error(
+                    "Login failed. The cookies provided may be invalid or expired."
+                )
+
+        except Exception as e:
+            Logger.error(f"Error processing cookie file: {e}")
+
+    @try_except_request
     @login_required
     async def download(self, url: str, **kwargs):
         page = await self.page
@@ -178,7 +215,7 @@ class AsyncPlatzi:
             header_style="green",
             footer_style="green",
             show_footer=True,
-            box=box.SQUARE_DOUBLE_HEAD,
+            box=box.ROUNDED,
         )
         table.add_column("Sections", style="green", footer="Total", no_wrap=True)
         table.add_column("Lessons", style="green", footer="0", justify="center")
@@ -287,24 +324,30 @@ class AsyncPlatzi:
         if not overwrite and Path(path).exists():
             return
 
-        if isinstance(src, str):
-            page = await self.page
-            await page.goto(src)
-        else:
-            page = src
+        console = Console()
+        with console.status(
+            "[green]Saving page...[/]\n", spinner="bouncingBar", spinner_style="green"
+        ):
+            if isinstance(src, str):
+                page = await self.page
+                await page.goto(src)
+            else:
+                page = src
 
-        await progressive_scroll(page)
+            await progressive_scroll(page)
 
-        try:
-            client = await page.context.new_cdp_session(page)
-            response = await client.send("Page.captureSnapshot")
-            async with aiofiles.open(path, "w", encoding="utf-8", newline="\n") as file:
-                await file.write(response["data"])
-        except Exception:
-            raise Exception("Error saving page as mhtml")
+            try:
+                client = await page.context.new_cdp_session(page)
+                response = await client.send("Page.captureSnapshot")
+                async with aiofiles.open(
+                    path, "w", encoding="utf-8", newline="\n"
+                ) as file:
+                    await file.write(response["data"])
+            except Exception:
+                raise Exception("Error saving page as mhtml")
 
-        if isinstance(src, str):
-            await page.close()
+            if isinstance(src, str):
+                await page.close()
 
     @try_except_request
     async def get_json(self, url: str) -> dict:

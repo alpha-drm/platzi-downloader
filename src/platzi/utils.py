@@ -157,6 +157,53 @@ def validate_course_url(url: str) -> str:
     return match.group(1)
 
 
+def normalize_cookies(cookies: list[dict]) -> list[dict]:
+    """
+    Normalize cookies to a common format.
+
+    :param list[dict] cookies: List of cookies to normalize.
+    :return list[dict]: Normalized list of cookies.
+    """
+    import copy
+
+    valid_keys = {
+        "name",
+        "value",
+        "url",
+        "domain",
+        "path",
+        "expires",
+        "httpOnly",
+        "secure",
+        "sameSite",
+    }
+
+    same_site_valid_values = {"Lax", "Strict", "None"}
+    same_site_key = "sameSite"
+
+    normalized_cookies = []
+
+    for cookie in copy.deepcopy(cookies):
+        cleaned_cookie = {k: v for k, v in cookie.items() if k in valid_keys}
+
+        same_site = cleaned_cookie.get(same_site_key, "None")
+        if isinstance(same_site, str):
+            same_site = same_site.replace("unspecified", "Lax").capitalize()
+            cleaned_cookie[same_site_key] = (
+                same_site if same_site in same_site_valid_values else "None"
+            )
+        else:
+            cleaned_cookie[same_site_key] = "None"
+
+        has_url = "url" in cleaned_cookie
+        has_domain_path = "domain" in cleaned_cookie and "path" in cleaned_cookie
+
+        if has_url or has_domain_path:
+            normalized_cookies.append(cleaned_cookie)
+
+    return normalized_cookies
+
+
 @retry()
 async def download(url: str, path: Path, **kwargs):
     overwrite = kwargs.get("overwrite", False)

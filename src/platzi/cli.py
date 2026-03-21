@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -33,6 +34,34 @@ def logout():
         platzi logout
     """
     asyncio.run(_logout())
+
+
+@app.command()
+def set_cookies(
+    path: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="Path to cookies.json",
+            show_default=False,
+        ),
+    ],
+):
+    """
+    Login to Platzi using your cookies.
+
+    Usage:
+        platzi set-cookies cookies.json
+    """
+    asyncio.run(_set_cookies(path))
+
+
+async def _set_cookies(path: Path):
+    """Load cookies from file and save state inside an AsyncPlatzi context."""
+    async with AsyncPlatzi() as platzi:
+        await platzi.set_cookies(path)
 
 
 @app.command()
