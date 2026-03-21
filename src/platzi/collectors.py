@@ -1,4 +1,5 @@
 import asyncio
+from urllib.parse import urljoin
 
 from playwright.async_api import BrowserContext, Page
 
@@ -28,23 +29,33 @@ async def get_course_metadata(page: Page):
     PUBLICATION_DATE_SELECTOR = "p[class*='CoursePublicationDetails']"
     COVER_IMAGE_SELECTOR = "[property='og:image']"
     try:
-        element = await page.query_selector(COVER_IMAGE_SELECTOR)
-        cover_image_url = await element.get_attribute("content")
+        cover_locator = page.locator(COVER_IMAGE_SELECTOR)
+        cover_image_url = (
+            await cover_locator.get_attribute("content")
+            if await cover_locator.count() > 0
+            else None
+        )
 
-        publication_date = await page.locator(
-            PUBLICATION_DATE_SELECTOR
-        ).first.text_content()
+        publication_locator = page.locator(PUBLICATION_DATE_SELECTOR).first
+        publication_date = (
+            await publication_locator.text_content()
+            if await publication_locator.count() > 0
+            else None
+        )
 
         return {
             "cover_image_url": cover_image_url,
-            "publication_date": publication_date.strip(),
+            "publication_date": publication_date.strip() if publication_date else None,
         }
 
     except Exception as e:
         Logger.warning(
             f"The course metadata could not be extracted. {e.__class__.__name__}: {e}"
         )
-        return {}
+        return {
+            "cover_image_url": None,
+            "publication_date": None,
+        }
 
 
 @Cache.cache_async
@@ -56,19 +67,21 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
 
         chapters: list[Chapter] = []
         for i in range(await locator.count()):
-            chapter_name = await locator.nth(i).locator("h3").first.text_content()
+            chapter_name = await locator.nth(i).locator("h3 span").first.text_content()
 
             if not chapter_name:
                 raise EXCEPTION
 
-            block_list_locator = locator.nth(i).locator("a[class*='ItemLink']")
-
             units: list[Unit] = []
-            for j in range(await block_list_locator.count()):
-                ITEM_LOCATOR = block_list_locator.nth(j)
 
-                unit_url = await ITEM_LOCATOR.get_attribute("href")
-                unit_title = await ITEM_LOCATOR.locator("h3").first.text_content()
+            items = locator.nth(i).locator("li[id^='syllabus-material'] a")
+            items_count = await items.count()
+
+            for j in range(items_count):
+                item = items.nth(j)
+
+                unit_title = await item.locator("h3").first.text_content()
+                unit_url = await item.get_attribute("href")
 
                 if not unit_url or not unit_title:
                     raise EXCEPTION
@@ -77,7 +90,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
                     Unit(
                         type=TypeUnit.VIDEO,
                         title=unit_title,
-                        url=PLATZI_URL + unit_url,
+                        url=urljoin(PLATZI_URL, unit_url),
                         slug=slugify(unit_title),
                     )
                 )
