@@ -76,14 +76,16 @@ def slugify(text: str) -> str:
     return unidecode(clean_string(text)).lower().replace(" ", "-")
 
 
-def get_m3u8_url(content: str) -> str:
-    pattern = r"https?://[^\s\"'}]+\.m3u8"
-    matches = re.findall(pattern, content)
+def get_m3u8_url(content: str) -> str | None:
+    base = "https://api.platzi.com"
 
-    if not matches:
-        raise Exception("No m3u8 urls found")
+    pattern = r"/mdstrm/v1/video/[^\"'\s]+\.m3u8"
+    match = re.search(pattern, content)
 
-    return matches[0]
+    if match:
+        return base + match.group(0)
+
+    return None
 
 
 def get_subtitles_url(content: str) -> list[str] | None:
