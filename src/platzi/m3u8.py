@@ -301,9 +301,7 @@ async def m3u8_dl(
         target = int(quality.value)
 
         streams_sorted = sorted(
-            m3u8_urls,
-            key=lambda s: int(s["resolution"]),
-            reverse=True
+            m3u8_urls, key=lambda s: int(s["resolution"]), reverse=True
         )
 
         url_res = None
@@ -316,7 +314,8 @@ async def m3u8_dl(
                 break
 
         if url_res is None:
-            Logger.info(f"Available resolutions: {', '.join(streams_sorted)}")
+            resolutions = [s["resolution"] for s in streams_sorted]
+            Logger.info(f"Available resolutions: {', '.join(resolutions)}")
             selected_res = int(streams_sorted[-1]["resolution"])
             url_res = streams_sorted[-1]["url"]
 
