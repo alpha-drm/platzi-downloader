@@ -75,6 +75,26 @@ Para iniciar sesión en Platzi, usa el comando login. Esto abrirá una ventana d
 platzi login
 ```
 
+### Cookies
+Este método se recomienda si tienes problemas de autenticación mediante el método anterior.
+
+```console
+platzi set-cookies path/cookies.json
+```
+
+<details>
+
+<summary>Tips & Tricks</summary>
+
+## Exportar las cookies
+
+1. Inicia sesión en tu navegador de tu preferencia.
+2. Instala alguna extensión como **_`GetCookies`_** o **_`Cookie-Editor`_**
+3. Recarga la página.
+4. Exporta las cookies en formato `json` desde la extensión.
+
+</details>
+
 ### Cerrar Sesión
 
 Para cerrar sesión en Platzi y borrar tu sesión del almacenamiento local, usa el comando `logout`.
@@ -84,6 +104,9 @@ platzi logout
 ```
 
 ### Descargar un Curso
+
+> [!IMPORTANT]
+> Asegúrate de estar logueado antes de intentar descargar los cursos.
 
 Para descargar un curso de Platzi, usa el comando download seguido de la URL del curso que deseas descargar. La URL puede encontrarse en la barra de direcciones al visualizar la página del curso en Platzi.
 
@@ -101,6 +124,10 @@ OPTIONS:
   -f, --file        Path to a text file containing one course URL per line.
                     When this option is used, the URL argument is optional.
 ```
+
+> [!TIP]
+> Para visualizar los comandos disponibles, ejecuta `platzi --help`.
+> Para más detalle sobre un comando ejecuta `platzi [COMMAND] --help`.
 
 Ejemplos:
 
@@ -128,11 +155,6 @@ Para borrar la caché de Platzi, usa el comando `clear-cache`.
 platzi clear-cache
 ```
 
-> [!IMPORTANT]
-> Asegúrate de estar logueado antes de intentar descargar los cursos.
-
-<br>
-
 > [!TIP]
 > Si por algún motivo se cancela la descarga, vuelve a ejecutar `platzi download <url-del-curso>` para retomar la descarga.
 
@@ -151,6 +173,9 @@ platzi clear-cache
 <a href="https://github.com/ivansaul/vaporz/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=ivansaul/platzi-downloader" />
 </a>
+
+## License
+Distribuido bajo la Licencia MIT. Consulta el archivo [LICENSE](./LICENSE) para más información.
 
 ## **Aviso de Uso**
 
