@@ -27,7 +27,7 @@ class TypeUnit(str, Enum):
 
 class Video(BaseModel):
     id: int | None = None
-    url: str
+    url: str | None = None
     subtitles_url: list[str] | None = None
 
 
