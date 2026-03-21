@@ -13,6 +13,8 @@ import rnet
 from fake_useragent import UserAgent
 from tqdm.asyncio import tqdm
 
+from platzi.logger import Logger
+
 from .helpers import retry
 from .models import Quality
 
@@ -296,22 +298,30 @@ async def m3u8_dl(
         if not m3u8_urls:
             raise Exception("No m3u8 urls found")
 
+        target = int(quality.value)
+
+        streams_sorted = sorted(
+            m3u8_urls,
+            key=lambda s: int(s["resolution"]),
+            reverse=True
+        )
+
         url_res = None
 
-        for stream in m3u8_urls:
-            if stream["resolution"] == quality.value:
+        for stream in streams_sorted:
+            res = int(stream["resolution"])
+            if res <= target:
                 url_res = stream["url"]
+                selected_res = res
                 break
 
         if url_res is None:
-            available_resolutions = [
-                stream["resolution"] for stream in m3u8_urls if "resolution" in stream
-            ]
+            Logger.info(f"Available resolutions: {', '.join(streams_sorted)}")
+            selected_res = int(streams_sorted[-1]["resolution"])
+            url_res = streams_sorted[-1]["url"]
 
-            raise ValueError(
-                f"Requested quality not found: {quality.value}. "
-                f"Available resolutions: {', '.join(available_resolutions)}"
-            )
+        if selected_res != target:
+            Logger.info(f"Fallback: requested {target}, using {selected_res}")
 
         await _m3u8_dl(url_res, path, **kwargs)  # Here goes the url video resolution
 
