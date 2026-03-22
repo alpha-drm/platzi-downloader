@@ -77,13 +77,25 @@ def slugify(text: str) -> str:
 
 
 def get_m3u8_url(content: str) -> str | None:
-    base = "https://api.platzi.com"
+    base = "https://api.platzi.com/mdstrm/v1/video/"
 
-    pattern = r"/mdstrm/v1/video/[^\"'\s]+\.m3u8"
-    match = re.search(pattern, content)
+    # 1. search MPD
+    mpd_pattern = r"https?://[^\s\"']+\.mpd"
+    mpd_match = re.search(mpd_pattern, content)
 
+    if mpd_match:
+        mpd_url = mpd_match.group(0)
+
+        id_match = re.search(r"/video/([a-f0-9]{24})\.mpd", mpd_url)
+        if id_match:
+            video_id = id_match.group(1)
+            return base + video_id + ".m3u8"
+
+    # 2. fallback: direct m3u8
+    m3u8_pattern = r"https?://[^\s\"']+\.m3u8"
+    match = re.search(m3u8_pattern, content)
     if match:
-        return base + match.group(0)
+        return match.group(0)
 
     return None
 
