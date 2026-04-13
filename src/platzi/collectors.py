@@ -1,13 +1,13 @@
 import asyncio
-from urllib.parse import urljoin
 
 from playwright.async_api import BrowserContext, Page
 
 from .cache import Cache
 from .constants import PLATZI_URL
+from .helpers import retry
 from .logger import Logger
 from .models import Chapter, Resource, TypeUnit, Unit, Video
-from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
+from .utils import dismiss_modals, download_styles, get_m3u8_url, get_subtitles_url, slugify
 
 
 @Cache.cache_async
@@ -29,33 +29,23 @@ async def get_course_metadata(page: Page):
     PUBLICATION_DATE_SELECTOR = "p[class*='CoursePublicationDetails']"
     COVER_IMAGE_SELECTOR = "[property='og:image']"
     try:
-        cover_locator = page.locator(COVER_IMAGE_SELECTOR)
-        cover_image_url = (
-            await cover_locator.get_attribute("content")
-            if await cover_locator.count() > 0
-            else None
-        )
+        element = await page.query_selector(COVER_IMAGE_SELECTOR)
+        cover_image_url = await element.get_attribute("content")
 
-        publication_locator = page.locator(PUBLICATION_DATE_SELECTOR).first
-        publication_date = (
-            await publication_locator.text_content()
-            if await publication_locator.count() > 0
-            else None
-        )
+        publication_date = await page.locator(
+            PUBLICATION_DATE_SELECTOR
+        ).first.text_content()
 
         return {
             "cover_image_url": cover_image_url,
-            "publication_date": publication_date.strip() if publication_date else None,
+            "publication_date": publication_date.strip(),
         }
 
     except Exception as e:
         Logger.warning(
             f"The course metadata could not be extracted. {e.__class__.__name__}: {e}"
         )
-        return {
-            "cover_image_url": None,
-            "publication_date": None,
-        }
+        return {}
 
 
 @Cache.cache_async
@@ -67,21 +57,19 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
 
         chapters: list[Chapter] = []
         for i in range(await locator.count()):
-            chapter_name = await locator.nth(i).locator("h3 span").first.text_content()
+            chapter_name = await locator.nth(i).locator("h3").first.text_content()
 
             if not chapter_name:
                 raise EXCEPTION
 
+            block_list_locator = locator.nth(i).locator("a[class*='ItemLink']")
+
             units: list[Unit] = []
+            for j in range(await block_list_locator.count()):
+                ITEM_LOCATOR = block_list_locator.nth(j)
 
-            items = locator.nth(i).locator("li[id^='syllabus-material'] a")
-            items_count = await items.count()
-
-            for j in range(items_count):
-                item = items.nth(j)
-
-                unit_title = await item.locator("h3").first.text_content()
-                unit_url = await item.get_attribute("href")
+                unit_url = await ITEM_LOCATOR.get_attribute("href")
+                unit_title = await ITEM_LOCATOR.locator("h3").first.text_content()
 
                 if not unit_url or not unit_title:
                     raise EXCEPTION
@@ -90,7 +78,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
                     Unit(
                         type=TypeUnit.VIDEO,
                         title=unit_title,
-                        url=urljoin(PLATZI_URL, unit_url),
+                        url=PLATZI_URL + unit_url,
                         slug=slugify(unit_title),
                     )
                 )
@@ -110,11 +98,12 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
     return chapters
 
 
+@retry(attempts=3, delay=10, backoff=True)
 @Cache.cache_async
 async def get_unit(context: BrowserContext, url: str) -> Unit:
     TYPE_SELECTOR = ".VideoPlayer"
     TITLE_SELECTOR = "h1[class*='MaterialHeading']"
-    EXCEPTION = Exception("Could not collect unit data")
+    EXCEPTION = Exception(f"Could not collect unit data: {url}")
 
     SECTION_FILES = "//span[normalize-space(text())='Archivos de la clase']"
     SECTION_READING = "//span[normalize-space(text())='Lecturas recomendadas']"
@@ -136,9 +125,15 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
     page = None
     try:
         page = await context.new_page()
-        await page.goto(url)
+        await page.goto(url, timeout=90_000, wait_until="domcontentloaded")
 
         await asyncio.sleep(5)  # delay to avoid rate limiting
+        await dismiss_modals(page)  # Dismiss popups before interacting with the page
+
+        try:
+            await page.wait_for_selector(TITLE_SELECTOR, timeout=30_000)
+        except Exception:
+            raise EXCEPTION
 
         title = await page.locator(TITLE_SELECTOR).first.text_content()
 

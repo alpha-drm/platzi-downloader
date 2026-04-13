@@ -149,7 +149,7 @@ def clear_cache():
 
 
 async def _login():
-    async with AsyncPlatzi() as platzi:
+    async with AsyncPlatzi(headless=False) as platzi:
         await platzi.login()
 
 

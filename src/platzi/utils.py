@@ -24,6 +24,29 @@ async def progressive_scroll(
         total_time += delay
 
 
+async def dismiss_modals(page: Page):
+    """
+    Dismiss common Platzi modals/popups before interacting with the page.
+    Looks for known "skip" or "close" buttons and clicks the first one found.
+    """
+    SKIP_SELECTORS = [
+        "button:has-text('Omitir por ahora')",
+        "button:has-text('Omitir')",
+        "button:has-text('Cerrar')",
+        "[aria-label='Close']",
+        "[aria-label='Cerrar']",
+    ]
+    try:
+        for selector in SKIP_SELECTORS:
+            btn = page.locator(selector).first
+            if await btn.is_visible(timeout=3_000):
+                await btn.click()
+                await asyncio.sleep(0.5)
+                break
+    except Exception:
+        pass  # Si no hay modal, continuar normalmente
+
+
 def get_course_slug(url: str) -> str:
     """
     Extracts the course slug from a Platzi course URL.

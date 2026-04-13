@@ -13,8 +13,6 @@ import rnet
 from fake_useragent import UserAgent
 from tqdm.asyncio import tqdm
 
-from platzi.logger import Logger
-
 from .helpers import retry
 from .models import Quality
 
@@ -298,29 +296,47 @@ async def m3u8_dl(
         if not m3u8_urls:
             raise Exception("No m3u8 urls found")
 
-        target = int(quality.value)
-
-        streams_sorted = sorted(
-            m3u8_urls, key=lambda s: int(s["resolution"]), reverse=True
-        )
-
         url_res = None
 
-        for stream in streams_sorted:
-            res = int(stream["resolution"])
-            if res <= target:
+        for stream in m3u8_urls:
+            if stream["resolution"] == quality.value:
                 url_res = stream["url"]
-                selected_res = res
                 break
 
         if url_res is None:
-            resolutions = [s["resolution"] for s in streams_sorted]
-            Logger.info(f"Available resolutions: {', '.join(resolutions)}")
-            selected_res = int(streams_sorted[-1]["resolution"])
-            url_res = streams_sorted[-1]["url"]
+            # Build a sorted list of (resolution_int, url) for fallback
+            numeric_streams: list[tuple[int, str]] = []
+            for stream in m3u8_urls:
+                try:
+                    numeric_streams.append((int(stream["resolution"]), stream["url"]))
+                except (ValueError, KeyError):
+                    pass
 
-        if selected_res != target:
-            Logger.info(f"Fallback: requested {target}, using {selected_res}")
+            if not numeric_streams:
+                raise ValueError("No valid resolutions found in m3u8 playlist.")
+
+            numeric_streams.sort(key=lambda x: x[0], reverse=True)  # highest first
+            available_str = ", ".join(str(r) for r, _ in numeric_streams)
+
+            if quality == Quality.MAX:
+                fallback_res, url_res = numeric_streams[0]
+            elif quality == Quality.MIN:
+                fallback_res, url_res = numeric_streams[-1]
+            else:
+                try:
+                    requested_int = int(quality.value)
+                    # Best resolution <= requested (step down gracefully)
+                    below = [(r, u) for r, u in numeric_streams if r <= requested_int]
+                    fallback_res, url_res = below[0] if below else numeric_streams[-1]
+                except ValueError:
+                    fallback_res, url_res = numeric_streams[0]
+
+            from .logger import Logger as _Logger
+            _Logger.warning(
+                f"Quality {quality.value}p not available. "
+                f"Falling back to {fallback_res}p. "
+                f"(Available: {available_str})"
+            )
 
         await _m3u8_dl(url_res, path, **kwargs)  # Here goes the url video resolution
 
