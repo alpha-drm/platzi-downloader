@@ -25,11 +25,14 @@ from .m3u8 import m3u8_dl
 from .models import TypeUnit, User
 from .utils import (
     clean_string,
+    dismiss_modals,
     download,
     ensure_filename_length,
     normalize_cookies,
     progressive_scroll,
 )
+
+GOTO_TIMEOUT = 90_000  # ms — Platzi pages can be slow
 
 
 def login_required(func):
@@ -68,14 +71,29 @@ def try_except_request(func):
 
 
 class AsyncPlatzi:
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.loggedin = False
         self.headless = headless
         self.user = None
 
+    async def get_json(self, url: str) -> dict:
+        page = await self.page
+        await page.goto(url, timeout=GOTO_TIMEOUT, wait_until="domcontentloaded")
+        try:
+            content = await page.locator("pre").first.text_content(timeout=5_000)
+        except Exception:
+            content = await page.evaluate("() => document.body.innerText")
+        await page.close()
+        return json.loads(content or "{}")
+
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
+        # --no-focus-on-startup evita que la ventana robe el foco al abrirse
+        launch_args = ["--no-focus-on-startup", "--disable-focus-on-page-show"]
+        self._browser = await self._playwright.chromium.launch(
+            headless=self.headless,
+            args=launch_args,
+        )
         self._context = await self._browser.new_context(
             java_script_enabled=True,
             is_mobile=True,
@@ -105,8 +123,24 @@ class AsyncPlatzi:
 
     @try_except_request
     async def _set_profile(self) -> None:
+        import rnet
+
         try:
-            data = await self.get_json(LOGIN_DETAILS_URL)
+            # Usar las cookies guardadas directamente via HTTP — no depende del browser
+            cookies = await self.context.cookies()
+            cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+
+            client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
+            response = await client.get(
+                LOGIN_DETAILS_URL,
+                headers={
+                    "Cookie": cookie_header,
+                    "Referer": "https://platzi.com/",
+                    "Accept": "application/json",
+                },
+            )
+            data = await response.json()
+            await response.close()
             self.user = User(**data)
         except Exception:
             return
@@ -121,7 +155,7 @@ class AsyncPlatzi:
         Logger.info("You have to login manually, you have 2 minutes to do it")
 
         page = await self.page
-        await page.goto(LOGIN_URL)
+        await page.goto(LOGIN_URL, timeout=GOTO_TIMEOUT, wait_until="domcontentloaded")
         try:
             avatar = await page.wait_for_selector(
                 ".styles-module_Menu__Avatar__FTuh-",
@@ -175,11 +209,10 @@ class AsyncPlatzi:
     @login_required
     async def download(self, url: str, **kwargs):
         page = await self.page
-        await page.goto(url)
+        await page.goto(url, timeout=GOTO_TIMEOUT, wait_until="domcontentloaded")
 
         # course title
         course_title = await get_course_title(page)
-        # Logger.print(course_title, "[COURSE]")
 
         # download directory
         DL_DIR = Path("Courses") / clean_string(course_title)
@@ -222,13 +255,13 @@ class AsyncPlatzi:
 
         total_units = 0
 
-        with Live(table, refresh_per_second=4):  # update 4 times a second to feel fluid
+        with Live(table, refresh_per_second=4):
             for idx, section in enumerate(draft_chapters, 1):
-                time.sleep(0.3)  # arbitrary delay
+                time.sleep(0.3)
                 num_units = len(section.units)
                 total_units += num_units
                 table.add_row(f"{idx}-{section.name}", str(len(section.units)))
-                table.columns[1].footer = str(total_units)  # Update footer dynamically
+                table.columns[1].footer = str(total_units)
 
         for idx, draft_chapter in enumerate(draft_chapters, 1):
             Logger.info(f"Creating directory: {draft_chapter.name}")
@@ -236,9 +269,12 @@ class AsyncPlatzi:
             CHAP_DIR = DL_DIR / f"{idx:02}-{clean_string(draft_chapter.name)}"
             CHAP_DIR.mkdir(parents=True, exist_ok=True)
 
-            # iterate over units
             for jdx, draft_unit in enumerate(draft_chapter.units, 1):
-                unit = await get_unit(self.context, draft_unit.url)
+                try:
+                    unit = await get_unit(self.context, draft_unit.url)
+                except Exception as e:
+                    Logger.error(f"Skipping unit [{jdx}] {draft_unit.url} — {e}")
+                    continue
                 file_name = f"{jdx:02}-{clean_string(unit.title)}"
                 file_name = ensure_filename_length(file_name, CHAP_DIR)
 
@@ -248,7 +284,6 @@ class AsyncPlatzi:
                     Logger.print(f"[{dst.name}]", "[DOWNLOADING-VIDEO]")
                     await m3u8_dl(unit.video.url, dst, **kwargs)
 
-                    # download subtitles
                     subs = unit.video.subtitles_url
                     if subs:
                         for i, sub in enumerate(subs):
@@ -262,26 +297,21 @@ class AsyncPlatzi:
                                 if "pt" in s
                                 else i + 1
                             )
-
                             dst = CHAP_DIR / f"{file_name}_{lang}.vtt"
                             Logger.print(f"[{dst.name}]", "[DOWNLOADING-SUBS]")
                             await download(sub, dst, **kwargs)
 
-                    # download resources
                     if unit.resources:
-                        # download files
                         files = unit.resources.files_url
                         if files:
                             for archive in files:
                                 file_name = unquote(os.path.basename(archive))
                                 ext = Path(file_name).suffix
                                 file_name = ensure_filename_length(file_name, CHAP_DIR)
-
                                 dst = CHAP_DIR / f"{jdx:02}-{file_name}{ext}"
                                 Logger.print(f"[{dst.name}]", "[DOWNLOADING-FILES]")
                                 await download(archive, dst)
 
-                        # download readings
                         readings = unit.resources.readings_url
                         if readings:
                             dst = CHAP_DIR / f"{jdx:02}-Lecturas recomendadas.txt"
@@ -290,7 +320,6 @@ class AsyncPlatzi:
                                 for lecture in readings:
                                     f.write(lecture + "\n")
 
-                        # download summary
                         summary = unit.resources.summary
                         if summary:
                             dst = CHAP_DIR / f"{jdx:02}-Resumen.html"
@@ -330,10 +359,11 @@ class AsyncPlatzi:
         ):
             if isinstance(src, str):
                 page = await self.page
-                await page.goto(src)
+                await page.goto(src, timeout=GOTO_TIMEOUT, wait_until="domcontentloaded")
             else:
                 page = src
 
+            await dismiss_modals(page)
             await progressive_scroll(page)
 
             try:
@@ -348,14 +378,6 @@ class AsyncPlatzi:
 
             if isinstance(src, str):
                 await page.close()
-
-    @try_except_request
-    async def get_json(self, url: str) -> dict:
-        page = await self.page
-        await page.goto(url)
-        content = await page.locator("pre").first.text_content()
-        await page.close()
-        return json.loads(content or "{}")
 
     async def _save_state(self):
         cookies = await self.context.cookies()
