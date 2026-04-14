@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 import aiofiles
+from fake_useragent import UserAgent
 from playwright.async_api import BrowserContext, Page, async_playwright
 from rich import box, print
 from rich.console import Console
@@ -25,6 +26,7 @@ from .m3u8 import m3u8_dl
 from .models import TypeUnit, User
 from .utils import (
     clean_string,
+    dismiss_modals,
     download,
     ensure_filename_length,
     normalize_cookies,
@@ -68,7 +70,7 @@ def try_except_request(func):
 
 
 class AsyncPlatzi:
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.loggedin = False
         self.headless = headless
         self.user = None
@@ -76,9 +78,13 @@ class AsyncPlatzi:
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=self.headless)
+
+        ua = UserAgent()
+        user_agent = ua.random
         self._context = await self._browser.new_context(
             java_script_enabled=True,
-            is_mobile=True,
+            user_agent=user_agent,
+            viewport={"width": 1280, "height": 720},
         )
 
         try:
@@ -174,12 +180,12 @@ class AsyncPlatzi:
     @try_except_request
     @login_required
     async def download(self, url: str, **kwargs):
-        page = await self.page
-        await page.goto(url)
+        overwrite = kwargs.get("overwrite", False)
 
-        # course title
+        page = await self.page
+        await page.goto(url, wait_until="domcontentloaded")
+
         course_title = await get_course_title(page)
-        # Logger.print(course_title, "[COURSE]")
 
         # download directory
         DL_DIR = Path("Courses") / clean_string(course_title)
@@ -245,10 +251,12 @@ class AsyncPlatzi:
                 # download video
                 if unit.video:
                     dst = CHAP_DIR / f"{file_name}.mp4"
-                    Logger.print(f"[{dst.name}]", "[DOWNLOADING-VIDEO]")
-                    await m3u8_dl(unit.video.url, dst, **kwargs)
+                    if not overwrite and dst.exists():
+                        Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
+                    else:
+                        Logger.print(f"[{dst.name}]", "[DOWNLOADING-VIDEO]")
+                        await m3u8_dl(unit.video.url, dst, **kwargs)
 
-                    # download subtitles
                     subs = unit.video.subtitles_url
                     if subs:
                         for i, sub in enumerate(subs):
@@ -264,12 +272,14 @@ class AsyncPlatzi:
                             )
 
                             dst = CHAP_DIR / f"{file_name}_{lang}.vtt"
-                            Logger.print(f"[{dst.name}]", "[DOWNLOADING-SUBS]")
-                            await download(sub, dst, **kwargs)
+                            if not overwrite and dst.exists():
+                                Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
+                            else:
+                                Logger.print(f"[{dst.name}]", "[DOWNLOADING-SUBS]")
+                                await download(sub, dst, **kwargs)
 
                     # download resources
                     if unit.resources:
-                        # download files
                         files = unit.resources.files_url
                         if files:
                             for archive in files:
@@ -278,39 +288,47 @@ class AsyncPlatzi:
                                 file_name = ensure_filename_length(file_name, CHAP_DIR)
 
                                 dst = CHAP_DIR / f"{jdx:02}-{file_name}{ext}"
-                                Logger.print(f"[{dst.name}]", "[DOWNLOADING-FILES]")
-                                await download(archive, dst)
+                                if not overwrite and dst.exists():
+                                    Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
+                                else:
+                                    Logger.print(f"[{dst.name}]", "[DOWNLOADING-FILES]")
+                                    await download(archive, dst)
 
-                        # download readings
                         readings = unit.resources.readings_url
                         if readings:
                             dst = CHAP_DIR / f"{jdx:02}-Lecturas recomendadas.txt"
-                            Logger.print(f"[{dst.name}]", "[SAVING-READINGS]")
-                            with open(dst, "w", encoding="utf-8") as f:
-                                for lecture in readings:
-                                    f.write(lecture + "\n")
+                            if not overwrite and dst.exists():
+                                Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
+                            else:
+                                Logger.print(f"[{dst.name}]", "[SAVING-READINGS]")
+                                with open(dst, "w", encoding="utf-8") as f:
+                                    for lecture in readings:
+                                        f.write(lecture + "\n")
 
-                        # download summary
                         summary = unit.resources.summary
                         if summary:
                             dst = CHAP_DIR / f"{jdx:02}-Resumen.html"
-                            Logger.print(f"[{dst.name}]", "[SAVING-SUMMARY]")
-                            with open(dst, "w", encoding="utf-8") as f:
-                                f.write(summary)
+                            if not overwrite and dst.exists():
+                                Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
+                            else:
+                                Logger.print(f"[{dst.name}]", "[SAVING-SUMMARY]")
+                                with open(dst, "w", encoding="utf-8") as f:
+                                    f.write(summary)
 
-                # download lecture
                 if unit.type == TypeUnit.LECTURE:
                     dst = CHAP_DIR / f"{file_name}.mhtml"
                     Logger.print(f"[{dst.name}]", "[DOWNLOADING-LECTURE]")
                     await self.save_page(unit.url, path=dst)
 
-                # download quiz
                 if unit.type == TypeUnit.QUIZ:
                     dst = CHAP_DIR / f"{file_name}.mhtml"
                     Logger.print(f"[{dst.name}]", "[DOWNLOADING-QUIZ]")
                     await self.save_page(unit.url, path=dst)
 
             print("=" * 100)
+
+        print("[bold blue]Download successfully completed.[/bold blue]")
+        print()
 
     @try_except_request
     async def save_page(
@@ -330,10 +348,11 @@ class AsyncPlatzi:
         ):
             if isinstance(src, str):
                 page = await self.page
-                await page.goto(src)
+                await page.goto(src, wait_until="domcontentloaded")
             else:
                 page = src
 
+            await dismiss_modals(page)  # Dismiss popups before scrolling/capturing
             await progressive_scroll(page)
 
             try:
@@ -351,11 +370,31 @@ class AsyncPlatzi:
 
     @try_except_request
     async def get_json(self, url: str) -> dict:
-        page = await self.page
-        await page.goto(url)
-        content = await page.locator("pre").first.text_content()
-        await page.close()
-        return json.loads(content or "{}")
+        response = await self.context.request.get(
+            url,
+            headers={
+                "Referer": "https://platzi.com/",
+                "Accept": "application/json, text/plain, */*",
+            },
+        )
+
+        if response.status != 200:
+            if response.status != 401:
+                Logger.error(
+                    f"Error HTTP {response.status} accessing {url}. Cloudflare may be blocking in headless mode. Please retry."
+                )
+            return {}
+
+        try:
+            data = await response.json()
+            return data
+        except Exception:
+            # Fallback
+            try:
+                text_content = await response.text()
+                return json.loads(text_content or "{}")
+            except Exception:
+                return {}
 
     async def _save_state(self):
         cookies = await self.context.cookies()

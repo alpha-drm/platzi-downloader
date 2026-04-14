@@ -7,7 +7,13 @@ from .cache import Cache
 from .constants import PLATZI_URL
 from .logger import Logger
 from .models import Chapter, Resource, TypeUnit, Unit, Video
-from .utils import download_styles, get_m3u8_url, get_subtitles_url, slugify
+from .utils import (
+    dismiss_modals,
+    download_styles,
+    get_m3u8_url,
+    get_subtitles_url,
+    slugify,
+)
 
 
 @Cache.cache_async
@@ -139,6 +145,7 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
         await page.goto(url)
 
         await asyncio.sleep(5)  # delay to avoid rate limiting
+        await dismiss_modals(page)  # Dismiss popups before interacting with the page
 
         title = await page.locator(TITLE_SELECTOR).first.text_content()
 
