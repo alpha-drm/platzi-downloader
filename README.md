@@ -123,6 +123,9 @@ OPTIONS:
 
   -f, --file        Path to a text file containing one course URL per line.
                     When this option is used, the URL argument is optional.
+
+  --headless        Run the browser in headless mode (default: enabled).
+  --no-headless     Use to open a visible browser. Login is performed in a visible browser by default.
 ```
 
 > [!TIP]
