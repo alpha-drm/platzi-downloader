@@ -32,7 +32,7 @@ async def get_course_title(page: Page) -> str:
 
 @Cache.cache_async
 async def get_course_metadata(page: Page):
-    PUBLICATION_DATE_SELECTOR = "p[class*='CoursePublicationDetails']"
+    PUBLICATION_DATE_SELECTOR = "p[class*='CoursePublicationDetails__Date']"
     COVER_IMAGE_SELECTOR = "[property='og:image']"
     try:
         cover_locator = page.locator(COVER_IMAGE_SELECTOR)
@@ -43,11 +43,11 @@ async def get_course_metadata(page: Page):
         )
 
         publication_locator = page.locator(PUBLICATION_DATE_SELECTOR).first
-        publication_date = (
-            await publication_locator.text_content()
-            if await publication_locator.count() > 0
-            else None
-        )
+        try:
+            await publication_locator.wait_for(state="visible", timeout=5000)
+            publication_date = await publication_locator.inner_text()
+        except:  # noqa: E722
+            publication_date = None
 
         return {
             "cover_image_url": cover_image_url,
