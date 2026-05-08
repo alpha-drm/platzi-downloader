@@ -22,6 +22,50 @@ Es una herramienta de línea de comandos para descargar cursos directamente desd
 
 ## Instalación | Actualización
 
+### Con **`poetry`** **(recomendado)**
+
+> [!TIP]
+> La forma recomendada y moderna de instalar Poetry es usando **`pipx`**. Si no lo tienes, instálalo de acuerdo a tu sistema [aquí](https://pipx.pypa.io/stable/installation/)
+
+Este método instala la versión más reciente del proyecto directamente desde el repositorio.
+
+### Instalación
+
+1. Instala `poetry` en tu sistema:
+
+   ```console
+   pipx install poetry
+   ```
+
+2. Clona el repositorio:
+
+   ```console
+   git clone https://github.com/alpha-drm/platzi-downloader.git
+   ```
+
+3. Entra al directorio del repositorio:
+
+   ```console
+   cd platzi-downloader
+   ```
+
+4. Instala las dependencias:
+
+   ```console
+   poetry install
+   ```
+
+5. Instala las dependencias de `playwright`:
+
+   ```console
+   poetry run playwright install chromium
+   ```
+
+### Usando `pip` desde PyPI
+
+> [!NOTE]
+> Las versiones publicadas en PyPI pueden no incluir los cambios más recientes del repositorio.
+
 Para [`instalar` | `actualizar` ], ejecuta el siguiente comando en tu terminal:
 
 ```console
@@ -126,6 +170,10 @@ OPTIONS:
 
   --headless        Run the browser in headless mode (default: enabled).
   --no-headless     Use to open a visible browser. Login is performed in a visible browser by default.
+
+  -o, --output      Set the path to the output directory.
+
+  --chapter         Download specific chapters. Use comma separated values and ranges (e.g., '1,3-5,7,9-11').
 ```
 
 > [!TIP]
@@ -147,10 +195,18 @@ platzi download https://platzi.com/cursos/python -w
 ```
 
 ```console
-platzi download --file courses.txt
+platzi download --file courses_url.txt
 ```
 
-### Borrar Caché
+```console
+platzi download https://platzi.com/cursos/python --output path/to/course
+```
+
+```console
+platzi download https://platzi.com/cursos/python --chapter "1,3"
+```
+
+#### Borrar Caché
 
 Para borrar la caché de Platzi, usa el comando `clear-cache`.
 
