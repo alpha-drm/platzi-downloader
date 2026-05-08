@@ -108,6 +108,22 @@ def download(
             show_default=True,
         ),
     ] = True,
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output directory path",
+            show_default=True,
+        ),
+    ] = Path("Courses"),
+    chapter_filter_raw: Annotated[
+        str | None,
+        typer.Option(
+            "--chapter",
+            help="Download specific chapters. Use comma separated values and ranges (e.g. '1,3-5,7').",
+        ),
+    ] = None,
 ):
     """
     Download a Platzi course from the given URL, or multiple from a text file.
@@ -142,7 +158,14 @@ def download(
         raise typer.Exit(code=1)
 
     asyncio.run(
-        _download(urls, quality=quality, overwrite=overwrite, headless=headless)
+        _download(
+            urls,
+            quality=quality,
+            overwrite=overwrite,
+            headless=headless,
+            output=output,
+            chapter_filter_raw=chapter_filter_raw,
+        )
     )
 
 
@@ -171,7 +194,12 @@ async def _logout():
 
 async def _download(urls: list[str], **kwargs):
     headless = kwargs.pop("headless", True)
-    async with AsyncPlatzi(headless=headless) as platzi:
+    chapter_filter_raw = kwargs.pop("chapter_filter_raw", None)
+
+    async with AsyncPlatzi(
+        headless=headless,
+        chapter_filter_raw=chapter_filter_raw,
+    ) as platzi:
         for url in urls:
             try:
                 await platzi.download(url, **kwargs)

@@ -3,6 +3,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Union
 from urllib.parse import unquote
 
 import aiofiles
@@ -30,6 +31,7 @@ from .utils import (
     download,
     ensure_filename_length,
     normalize_cookies,
+    parse_chapter_filter,
     progressive_scroll,
 )
 
@@ -70,10 +72,15 @@ def try_except_request(func):
 
 
 class AsyncPlatzi:
-    def __init__(self, headless=True):
+    def __init__(
+        self,
+        headless: bool = True,
+        chapter_filter_raw: Union[str, None] = None,
+    ):
         self.loggedin = False
         self.headless = headless
-        self.user = None
+        self.user: User | None = None
+        self.chapter_filter_raw = chapter_filter_raw
 
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
@@ -117,7 +124,7 @@ class AsyncPlatzi:
         except Exception:
             return
 
-        if self.user.is_authenticated:
+        if self.user and self.user.is_authenticated:
             self.loggedin = True
             Logger.info(f"Hi, {self.user.username}!\n")
 
@@ -181,6 +188,7 @@ class AsyncPlatzi:
     @login_required
     async def download(self, url: str, **kwargs):
         overwrite = kwargs.get("overwrite", False)
+        output = kwargs.get("output", Path("Courses"))
 
         page = await self.page
         await page.goto(url, wait_until="domcontentloaded")
@@ -188,7 +196,7 @@ class AsyncPlatzi:
         course_title = await get_course_title(page)
 
         # download directory
-        DL_DIR = Path("Courses") / clean_string(course_title)
+        DL_DIR = output / clean_string(course_title)
         DL_DIR.mkdir(parents=True, exist_ok=True)
 
         metadata = await get_course_metadata(page)
@@ -236,7 +244,20 @@ class AsyncPlatzi:
                 table.add_row(f"{idx}-{section.name}", str(len(section.units)))
                 table.columns[1].footer = str(total_units)  # Update footer dynamically
 
+        # Process the chapter filter
+        chapter_filter = None
+        if self.chapter_filter_raw:
+            chapter_filter = parse_chapter_filter(self.chapter_filter_raw)
+            Logger.info(f"[+] Chapter filter applied: {sorted(chapter_filter)}")
+
         for idx, draft_chapter in enumerate(draft_chapters, 1):
+            # Skip chapters not in the filter if a filter is provided
+            if chapter_filter and idx not in chapter_filter:
+                Logger.info(
+                    f"[-] Skipping chapter {idx} as it is not in the specified filter."
+                )
+                continue
+
             Logger.info(f"Creating directory: {draft_chapter.name}")
 
             CHAP_DIR = DL_DIR / f"{idx:02}-{clean_string(draft_chapter.name)}"
