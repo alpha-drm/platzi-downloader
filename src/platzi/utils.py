@@ -282,3 +282,35 @@ async def download_styles(url: str, **kwargs):
     await response.close()
 
     return content
+
+
+def parse_chapter_filter(chapter_str: str) -> set[int]:
+    """
+    Given a string like "1,3-5,7,9-11",
+    return a set of chapter numbers.
+    """
+    chapters: set[int] = set()
+
+    for part in chapter_str.split(","):
+        part = part.strip()
+
+        if "-" in part:
+            try:
+                start_str, end_str = part.split("-")
+
+                start = int(start_str.strip())
+                end = int(end_str.strip())
+
+                chapters.update(range(start, end + 1))
+
+            except ValueError:
+                Logger.error(f"Invalid range in --chapter argument: {part}")
+
+        else:
+            try:
+                chapters.add(int(part))
+
+            except ValueError:
+                Logger.error(f"Invalid chapter number in --chapter argument: {part}")
+
+    return chapters
