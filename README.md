@@ -180,7 +180,16 @@ OPTIONS:
 > Para visualizar los comandos disponibles, ejecuta `platzi --help`.
 > Para más detalle sobre un comando ejecuta `platzi [COMMAND] --help`.
 
-Ejemplos:
+> [!IMPORTANT]
+> Si instalaste el proyecto usando `poetry`, debes ejecutar los comandos utilizando `poetry run`.
+
+Ejemplo:
+
+```console
+poetry run platzi download https://platzi.com/cursos/python
+```
+
+Otros ejemplos:
 
 ```console
 platzi download https://platzi.com/cursos/python
