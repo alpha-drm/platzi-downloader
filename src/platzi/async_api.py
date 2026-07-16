@@ -308,7 +308,7 @@ class AsyncPlatzi:
                                 ext = Path(file_name).suffix
                                 file_name = ensure_filename_length(file_name, CHAP_DIR)
 
-                                dst = CHAP_DIR / f"{jdx:02}-{file_name}{ext}"
+                                dst = CHAP_DIR / f"{jdx:02}-{file_name}"
                                 if not overwrite and dst.exists():
                                     Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
                                 else:
@@ -328,7 +328,7 @@ class AsyncPlatzi:
 
                         summary = unit.resources.summary
                         if summary:
-                            dst = CHAP_DIR / f"{jdx:02}-Resumen.html"
+                            dst = CHAP_DIR / f"{jdx:02}-Resumen y Recursos.html"
                             if not overwrite and dst.exists():
                                 Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
                             else:
