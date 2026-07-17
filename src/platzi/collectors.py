@@ -1,4 +1,6 @@
 import asyncio
+import re
+import time
 from urllib.parse import urljoin
 
 from playwright.async_api import BrowserContext, Page
@@ -46,8 +48,8 @@ async def get_course_metadata(page: Page):
         try:
             await publication_locator.wait_for(state="visible", timeout=5000)
             publication_date = await publication_locator.inner_text()
-        except:  # noqa: E722
-            publication_date = None
+        except Exception:
+            pass
 
         return {
             "cover_image_url": cover_image_url,
@@ -119,17 +121,12 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
 @Cache.cache_async
 async def get_unit(context: BrowserContext, url: str) -> Unit:
     TYPE_SELECTOR = ".VideoPlayer"
-    TITLE_SELECTOR = "h1[class*='MaterialHeading']"
+    TITLE_SELECTOR = "h1[class*='MaterialCourseInfo']"
     EXCEPTION = Exception("Could not collect unit data")
 
-    SECTION_FILES = "//span[normalize-space(text())='Archivos de la clase']"
-    SECTION_READING = "//span[normalize-space(text())='Lecturas recomendadas']"
-    SECTION_LINKS = "a[class*='FilesAndLinks_Item']"
-    BUTTON_DOWNLOAD_ALL = "a[class*='FilesTree__Download'][href][download]"
-    SUMMARY_CONTENT_SELECTOR = "div[class*='Resources_Resources__Articlass--expanded']"
-    SIBLINGS = "//following-sibling::ul[1]"
-    LAYOUT_CONTAINER = "div[class*='Layout_Layout__']"
-    MAIN_LAYOUT = "main[class*='Layout_Layout-main']"
+    MATERIAL_CONTENT = "div[class*='page_DesktopAfterMaterial__']"
+    RESOURCES_SECTION = "div[class*='FilesAndLinks_FilesAndLinks__']"
+    RESOURCES_LINKS = "a[class*='FilesAndLinks_Item']"
 
     if "/quiz/" in url:
         return Unit(
@@ -170,55 +167,28 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
 
         # --- Get resources and summary ---
         html_summary = None
-
-        files_section = page.locator(SECTION_FILES)
-        next_sibling_files = files_section.locator(SIBLINGS)
-
-        reading_section = page.locator(SECTION_READING)
-        next_sibling_reading = reading_section.locator(SIBLINGS)
-
-        download_all_button = page.locator(BUTTON_DOWNLOAD_ALL)
-
         file_links: list[str] = []
         readings_links: list[str] = []
+        extension_pattern = re.compile(r"\.\w+$")
 
-        # Get "Archivos de la clase" if the section exists
-        if await next_sibling_files.count() > 0:
-            enlaces = next_sibling_files.locator(SECTION_LINKS)
-            for i in range(await enlaces.count()):
-                link = await enlaces.nth(i).get_attribute("href")
-                if link:
+        time.sleep(5)
+
+        resources_section = page.locator(RESOURCES_SECTION)
+        if await resources_section.count() > 0:
+            resources_links = resources_section.locator(RESOURCES_LINKS)
+            for i in range(await resources_links.count()):
+                link = await resources_links.nth(i).get_attribute("href")
+                if extension_pattern.search(link):
                     file_links.append(link)
 
-        # Get link of the download all button if it exists
-        if await download_all_button.count() > 0:
-            link = await download_all_button.get_attribute("href")
-            if link:
-                file_links.append(link)
+        time.sleep(5)
 
-        # Get "Lecturas recomendadas" if the section exists
-        if await next_sibling_reading.count() > 0:
-            enlaces = next_sibling_reading.locator(SECTION_LINKS)
-            for i in range(await enlaces.count()):
-                link = await enlaces.nth(i).get_attribute("href")
-                if link:
-                    readings_links.append(link)
-
-        # Get summary if it exists
-        summary = page.locator(SUMMARY_CONTENT_SELECTOR)
-        if await summary.count() > 0:
+        # Get material content if it exists
+        material_content = page.locator(MATERIAL_CONTENT)
+        if await material_content.count() > 0:
             all_css_styles: list[str] = []
 
-            layout_container = await page.query_selector(LAYOUT_CONTAINER)
-            if layout_container:
-                class_container = await layout_container.get_attribute("class")
-
-            main_layout = await page.query_selector(MAIN_LAYOUT)
-            if main_layout:
-                class_main = await main_layout.get_attribute("class")
-
-            # Get the HTML structure of the summary
-            summary_section = await summary.evaluate("el => el.outerHTML")
+            summary_section = await material_content.evaluate("el => el.outerHTML")
 
             # Find all CSS selectors to include in the html_summary template
             stylesheet_links = page.locator("link[rel=stylesheet]")
@@ -238,7 +208,7 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
             # Combine all styles
             styles = "\n".join(filter(None, all_css_styles))
 
-            # HTML template for the summary
+            # HTML template
             html_summary = f"""
            <!DOCTYPE html>
             <html lang="es">
@@ -246,13 +216,24 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>{title}</title>
-                <style>{styles}</style>
+                <style>
+                    {styles}
+                    .general-container {{
+                        margin: 20px;
+                        padding: 20px;
+                        box-sizing: border-box;
+                    }}
+                    .title-header {{
+                        text-align: center;
+                        color: white;
+                        margin-bottom: 20px;
+                    }}
+                </style>
             </head>
             <body>
-                <div class={class_container}>
-                    <main class={class_main}>
-                        {summary_section}
-                    </main>
+                <div class="general-container">
+                    <h1 class="title-header">{title}</h1>
+                    {summary_section}
                 </div>
             </body>
             </html>"""
