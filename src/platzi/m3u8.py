@@ -1,44 +1,25 @@
 import asyncio
+import base64
 import functools
 import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
 import aiofiles
 import rnet
-from fake_useragent import UserAgent
 from tqdm.asyncio import tqdm
 
 from platzi.logger import Logger
 
+from .constants import HEADERS
 from .helpers import retry
 from .models import Quality
-
-
-def _build_headers() -> dict[str, str]:
-    """
-    Build HTTP headers for web requests, including a randomized User-Agent.
-
-    :return: A dictionary of header names to header values.
-    """
-    ua = UserAgent()
-    headers = {
-        "User-Agent": ua.random,
-        "Referer": "https://platzi.com/",
-        "Accept": "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
-        "Accept-Language": "es-ES, es;q=0.8, en-US;q=0.5, en;q=0.3",
-        "Connection": "keep-alive",
-        "Host": "mediastream.platzi.com",
-        "Origin": "https://platzi.com",
-    }
-    return headers
-
-
-headers = _build_headers()
 
 
 def _parse_m3u8_streams(m3u8_text: str) -> Optional[List[Dict[str, str]]]:
@@ -127,7 +108,7 @@ async def _ts_dl(url: str, path: Path, **kwargs):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=headers)
+    response: rnet.Response = await client.get(url, headers=HEADERS)
 
     try:
         if not response.ok:
@@ -194,7 +175,7 @@ async def _m3u8_dl(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=headers)
+    response: rnet.Response = await client.get(url, headers=HEADERS)
 
     try:
         if not response.ok:
@@ -243,7 +224,7 @@ async def _m3u8_dl(
         "-metadata",
         f"title={title}",
         "-metadata",
-        "comment=Downloaded with platzi-downloader (https://github.com/ivansaul/platzi-downloader)",
+        "comment=Downloaded with platzi-downloader",
         path,
     ]
 
@@ -264,7 +245,7 @@ async def _m3u8_dl(
 async def m3u8_dl(
     url: str,
     path: str | Path,
-    quality: Quality = Quality.P720,
+    quality: Quality = Quality.P1080,
     **kwargs,
 ) -> None:
     """
@@ -281,48 +262,85 @@ async def m3u8_dl(
     overwrite = kwargs.get("overwrite", False)
     path = path if isinstance(path, Path) else Path(path)
 
+    client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
+    response: rnet.Response = await client.get(url, headers=HEADERS)
+
+    if not response.ok:
+        raise Exception(f"Error downloading m3u8 master: {response.status_code}")
+
+    # --- 1. PROCESS SUBTITLES ---
+    try:
+        parsed_url = urlparse(url)
+        query_params = parse_qs(parsed_url.query)
+
+        if "subtitles" in query_params:
+            sub_base64 = query_params["subtitles"][0]
+            sub_base64 += "=" * ((4 - len(sub_base64) % 4) % 4)
+
+            subs_data = json.loads(base64.b64decode(sub_base64).decode("utf-8"))
+
+            for sub in subs_data:
+                sub_url = sub.get("uri") or sub.get("url")
+                lang = sub.get(
+                    "language", sub.get("name", sub.get("idiom", "es"))
+                ).lower()
+
+                if not sub_url:
+                    continue
+
+                sub_path = path.with_suffix(f".{lang}.vtt")
+
+                if sub_path.exists() and not overwrite:
+                    Logger.info(f"Subtitle already exists; skipping: {sub_path.name}")
+                    continue
+
+                Logger.info(f"Downloading subtitles: {lang}")
+
+                sub_response = await client.get(sub_url, headers=HEADERS)
+
+                if sub_response.ok:
+                    sub_text = await sub_response.text()
+                    sub_path.write_text(sub_text, encoding="utf-8")
+                    Logger.info(f"Subtitle saved: {sub_path.name}")
+                else:
+                    Logger.warning(
+                        f"The subtitle could not be downloaded. {lang}: {sub_response.status_code}"
+                    )
+    except Exception as e:
+        Logger.warning(f"The subtitles could not be processed separately.: {e}")
+
+    # --- 2. PROCESS VIDEO ---
     if not overwrite and path.exists():
+        Logger.info(f"Video already exists; skipping download: {path.name}")
         return
 
-    client = rnet.Client(impersonate=rnet.Impersonate.Firefox139)
-    response: rnet.Response = await client.get(url, headers=headers)
+    m3u8_urls = _parse_m3u8_streams(
+        await response.text()
+    )  # The .m3u8 link contains the video resolutions
 
-    try:
-        if not response.ok:
-            raise Exception("Error downloading m3u8")
+    if not m3u8_urls:
+        raise Exception("No m3u8 urls found")
 
-        m3u8_urls = _parse_m3u8_streams(
-            await response.text()
-        )  # The .m3u8 link contains the video resolutions
+    target = int(quality.value)
 
-        if not m3u8_urls:
-            raise Exception("No m3u8 urls found")
+    streams_sorted = sorted(m3u8_urls, key=lambda s: int(s["resolution"]), reverse=True)
 
-        target = int(quality.value)
+    url_res = None
 
-        streams_sorted = sorted(
-            m3u8_urls, key=lambda s: int(s["resolution"]), reverse=True
-        )
+    for stream in streams_sorted:
+        res = int(stream["resolution"])
+        if res <= target:
+            url_res = stream["url"]
+            selected_res = res
+            break
 
-        url_res = None
+    if url_res is None:
+        resolutions = [s["resolution"] for s in streams_sorted]
+        Logger.info(f"Available resolutions: {', '.join(resolutions)}")
+        selected_res = int(streams_sorted[-1]["resolution"])
+        url_res = streams_sorted[-1]["url"]
 
-        for stream in streams_sorted:
-            res = int(stream["resolution"])
-            if res <= target:
-                url_res = stream["url"]
-                selected_res = res
-                break
+    if selected_res != target:
+        Logger.info(f"Fallback: requested {target}, using {selected_res}")
 
-        if url_res is None:
-            resolutions = [s["resolution"] for s in streams_sorted]
-            Logger.info(f"Available resolutions: {', '.join(resolutions)}")
-            selected_res = int(streams_sorted[-1]["resolution"])
-            url_res = streams_sorted[-1]["url"]
-
-        if selected_res != target:
-            Logger.info(f"Fallback: requested {target}, using {selected_res}")
-
-        await _m3u8_dl(url_res, path, **kwargs)  # Here goes the url video resolution
-
-    finally:
-        await response.close()
+    await _m3u8_dl(url_res, path, **kwargs)  # Here goes the url video resolution
