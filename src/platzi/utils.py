@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -8,6 +10,7 @@ import rnet
 from playwright.async_api import Page
 from unidecode import unidecode
 
+from .constants import HEADERS, URL_TOKEN
 from .helpers import retry
 from .logger import Logger
 
@@ -99,26 +102,51 @@ def slugify(text: str) -> str:
     return unidecode(clean_string(text)).lower().replace(" ", "-")
 
 
+def _is_valid_base64(b64_string: str) -> bool:
+    """Validates if a string is a correct Base64 encoded JSON containing a URI."""
+    try:
+        missing_padding = len(b64_string) % 4
+        if missing_padding != 0:
+            b64_string += "=" * (4 - missing_padding)
+        decoded_bytes = base64.b64decode(b64_string, validate=True)
+        plain_text = decoded_bytes.decode("utf-8", errors="ignore")
+        return "uri" in plain_text
+    except Exception:
+        return False
+
+
 def get_m3u8_url(content: str) -> str | None:
-    base_mpd = "https://mdstrm.com/video/"
+    chunk_patterns = [
+        r'self\.__next_f\.push\(\[\d+,\s*("(?:\\.|[^"\\])*")\]\)',
+        r'\.rsc\.push\(\s*("(?:\\.|[^"\\])*")\s*\)',
+    ]
 
-    # 1. search MPD
-    mpd_pattern = r"https?://[^\s\"']+\.mpd"
-    mpd_match = re.search(mpd_pattern, content)
+    matches = []
 
-    if mpd_match:
-        mpd_url = mpd_match.group(0)
+    for pattern in chunk_patterns:
+        matches.extend(re.findall(pattern, content))
 
-        id_match = re.search(r"/video/([a-f0-9]{24})\.mpd", mpd_url)
-        if id_match:
-            video_id = id_match.group(1)
-            return base_mpd + video_id + ".m3u8"
+    reconstructed_text = "".join(json.loads(match) for match in matches)
 
-    # 2. fallback: direct m3u8
-    m3u8_pattern = r"https?://[^\s\"']+\.m3u8"
-    match = re.search(m3u8_pattern, content)
-    if match:
-        return match.group(0)
+    pattern_m3u8 = (
+        r"(https://api\.platzi\.com/mdstrm/v1/video/"
+        r"[A-Za-z0-9]+\.m3u8\?subtitles=[A-Za-z0-9+/]+={0,2})"
+    )
+
+    pattern_mpd = r'(https://[^"\'\\\s]+\.mpd(?:\?[^"\'\\\s]*)?)'
+
+    match_m3u8 = re.search(pattern_m3u8, reconstructed_text)
+    match_mpd = re.search(pattern_mpd, reconstructed_text)
+
+    if match_m3u8:
+        full_url = match_m3u8.group(1)
+        token_b64 = full_url.split("?subtitles=", 1)[1]
+        if _is_valid_base64(token_b64):
+            return full_url
+
+    # Fallback
+    if match_mpd:
+        return match_mpd.group(1)
 
     return None
 
@@ -130,7 +158,48 @@ def get_subtitles_url(content: str) -> list[str] | None:
     if not matches:
         return None
 
-    return matches  # returns a list of all found subtitles without repeating
+    return matches
+
+
+def refresh_token() -> dict:
+    url_token = URL_TOKEN
+    headers = HEADERS
+
+    client = rnet.BlockingClient(impersonate=rnet.Impersonate.Firefox139)
+    res: rnet.Response = client.get(url_token, headers=headers)
+
+    data = res.json()
+    token = data.get("token", {}).get("access")
+
+    if not token:
+        raise Exception(
+            "The 'token' or the 'access' property was not found in the response."
+        )
+
+    headers["Authorization"] = f"Bearer {token}"
+
+    return headers
+
+
+async def get_resources(page, api_resources: str) -> dict | None:
+    try:
+        response = await page.context.request.get(api_resources)
+
+        if response.status != 200:
+            Logger.error(f"API Error: {response.status} - {await response.text()}")
+            return None
+
+        data = await response.json()
+        resources = data.get("data", {"files": [], "links": []})
+
+        if resources.get("files") or resources.get("links"):
+            return resources
+
+        return None
+
+    except Exception as e:
+        Logger.error(f"Error while making the request using Playwright Request: {e}")
+        return None
 
 
 def ensure_filename_length(
