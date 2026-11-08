@@ -31,9 +31,23 @@ class Video(BaseModel):
     subtitles_url: list[str] | None = None
 
 
+class FileItem(BaseModel):
+    name: str | None = None
+    url: str
+
+
+class ReadingItem(BaseModel):
+    title: str | None = None
+    url: str
+
+
 class Resource(BaseModel):
-    files_url: list[str] = Field(default_factory=list)
-    readings_url: list[str] = Field(default_factory=list)
+    files_url: list[FileItem] = Field(
+        default_factory=list
+    )  # Ahora acepta la lista de objetos FileItem
+    readings_url: list[ReadingItem] = Field(
+        default_factory=list
+    )  # Ahora acepta la lista de objetos ReadingItem
     summary: str | None = None
 
 
