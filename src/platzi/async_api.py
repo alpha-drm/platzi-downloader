@@ -7,7 +7,6 @@ from typing import Union
 from urllib.parse import unquote
 
 import aiofiles
-from fake_useragent import UserAgent
 from playwright.async_api import BrowserContext, Page, async_playwright
 from rich import box, print
 from rich.console import Console
@@ -20,7 +19,7 @@ from .collectors import (
     get_draft_chapters,
     get_unit,
 )
-from .constants import LOGIN_DETAILS_URL, LOGIN_URL, SESSION_FILE
+from .constants import HEADERS, LOGIN_DETAILS_URL, LOGIN_URL, SESSION_FILE
 from .helpers import read_json, write_json
 from .logger import Logger
 from .m3u8 import m3u8_dl
@@ -86,8 +85,7 @@ class AsyncPlatzi:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=self.headless)
 
-        ua = UserAgent()
-        user_agent = ua.random
+        user_agent = HEADERS["User-Agent"]
         self._context = await self._browser.new_context(
             java_script_enabled=True,
             user_agent=user_agent,
