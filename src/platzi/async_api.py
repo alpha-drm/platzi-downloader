@@ -259,76 +259,53 @@ class AsyncPlatzi:
                 continue
 
             Logger.info(f"Creating directory: {draft_chapter.name}")
-
-            CHAP_DIR = DL_DIR / f"{idx:02}-{clean_string(draft_chapter.name)}"
+            CHAP_DIR = DL_DIR / f"{idx:02} - {clean_string(draft_chapter.name)}"
             CHAP_DIR.mkdir(parents=True, exist_ok=True)
 
             # iterate over units
             for jdx, draft_unit in enumerate(draft_chapter.units, 1):
                 unit = await get_unit(self.context, draft_unit.url)
-                file_name = f"{jdx:02}-{clean_string(unit.title)}"
-                file_name = ensure_filename_length(file_name, CHAP_DIR)
+                file_name = f"{jdx:02} - {clean_string(unit.title)}"
+                file_name_clean = ensure_filename_length(file_name, CHAP_DIR)
 
                 # download video
                 if unit.video:
-                    dst = CHAP_DIR / f"{file_name}.mp4"
-                    if not overwrite and dst.exists():
-                        Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
-                    else:
-                        Logger.print(f"[{dst.name}]", "[DOWNLOADING-VIDEO]")
-                        await m3u8_dl(unit.video.url, dst, **kwargs)
+                    dst = CHAP_DIR / f"{file_name_clean}.mp4"
+                    await m3u8_dl(unit.video.url, dst, **kwargs)
 
-                    subs = unit.video.subtitles_url
-                    if subs:
-                        for i, sub in enumerate(subs):
-                            s = sub.lower()
-                            lang = (
-                                "es"
-                                if "es" in s
-                                else "en"
-                                if "en" in s
-                                else "pt"
-                                if "pt" in s
-                                else i + 1
-                            )
-
-                            dst = CHAP_DIR / f"{file_name}_{lang}.vtt"
-                            if not overwrite and dst.exists():
-                                Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
-                            else:
-                                Logger.print(f"[{dst.name}]", "[DOWNLOADING-SUBS]")
-                                await download(sub, dst, **kwargs)
-
-                    # download resources
                     if unit.resources:
                         files = unit.resources.files_url
                         if files:
                             for archive in files:
-                                file_name = unquote(os.path.basename(archive))
+                                file_name = (
+                                    archive.name
+                                    if archive.name
+                                    else unquote(os.path.basename(archive.url))
+                                )
                                 ext = Path(file_name).suffix
                                 file_name = ensure_filename_length(file_name, CHAP_DIR)
 
-                                dst = CHAP_DIR / f"{jdx:02}-{file_name}"
+                                dst = CHAP_DIR / f"{jdx:02} - {file_name}"
                                 if not overwrite and dst.exists():
                                     Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
                                 else:
                                     Logger.print(f"[{dst.name}]", "[DOWNLOADING-FILES]")
-                                    await download(archive, dst)
+                                    await download(archive.url, dst)
 
                         readings = unit.resources.readings_url
                         if readings:
-                            dst = CHAP_DIR / f"{jdx:02}-Lecturas recomendadas.txt"
+                            dst = CHAP_DIR / f"{jdx:02} - Lecturas recomendadas.txt"
                             if not overwrite and dst.exists():
                                 Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
                             else:
                                 Logger.print(f"[{dst.name}]", "[SAVING-READINGS]")
                                 with open(dst, "w", encoding="utf-8") as f:
                                     for lecture in readings:
-                                        f.write(lecture + "\n")
+                                        f.write(f"Enlace: {lecture.url}\n\n")
 
                         summary = unit.resources.summary
                         if summary:
-                            dst = CHAP_DIR / f"{jdx:02}-Resumen y Recursos.html"
+                            dst = CHAP_DIR / f"{file_name_clean}.html"
                             if not overwrite and dst.exists():
                                 Logger.print(f"[{dst.name}]", "[ALREADY-EXISTS]")
                             else:
