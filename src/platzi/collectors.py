@@ -13,7 +13,7 @@ from .utils import (
     dismiss_modals,
     download_styles,
     get_m3u8_url,
-    get_subtitles_url,
+    get_resources,
     slugify,
 )
 
@@ -46,7 +46,7 @@ async def get_course_metadata(page: Page):
 
         publication_locator = page.locator(PUBLICATION_DATE_SELECTOR).first
         try:
-            await publication_locator.wait_for(state="visible", timeout=5000)
+            await publication_locator.wait_for(state="visible", timeout=10000)
             publication_date = await publication_locator.inner_text()
         except Exception:
             pass
@@ -88,7 +88,7 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
             for j in range(items_count):
                 item = items.nth(j)
 
-                unit_title = await item.locator("h3").first.text_content()
+                unit_title = await item.locator("h4").first.text_content()
                 unit_url = await item.get_attribute("href")
 
                 if not unit_url or not unit_title:
@@ -121,12 +121,10 @@ async def get_draft_chapters(page: Page) -> list[Chapter]:
 @Cache.cache_async
 async def get_unit(context: BrowserContext, url: str) -> Unit:
     TYPE_SELECTOR = ".VideoPlayer"
-    TITLE_SELECTOR = "h1[class*='MaterialCourseInfo']"
+    TITLE_SELECTOR = "h1[class*='_MaterialClassBar__title_']"
     EXCEPTION = Exception("Could not collect unit data")
 
-    MATERIAL_CONTENT = "div[class*='page_DesktopAfterMaterial__']"
-    RESOURCES_SECTION = "div[class*='FilesAndLinks_FilesAndLinks__']"
-    RESOURCES_LINKS = "a[class*='FilesAndLinks_Item']"
+    MATERIAL_CONTENT = "div[class*=_PlayerColumn__resources_]"
 
     if "/quiz/" in url:
         return Unit(
@@ -162,35 +160,47 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
         unit_type = TypeUnit.VIDEO
         video = Video(
             url=get_m3u8_url(content),
-            subtitles_url=get_subtitles_url(content),
         )
 
         # --- Get resources and summary ---
         html_summary = None
-        file_links: list[str] = []
-        readings_links: list[str] = []
-        extension_pattern = re.compile(r"\.\w+$")
+        file_links: list[dict] = []
+        readings_links: list[dict] = []
 
-        time.sleep(5)
+        material_match = re.search(r"\\\"materialId\\\":\\\"(\d+)\\\"", content)
+        course_match = re.search(r"\\\"courseId\\\":(\d+)", content)
 
-        resources_section = page.locator(RESOURCES_SECTION)
-        if await resources_section.count() > 0:
-            resources_links = resources_section.locator(RESOURCES_LINKS)
-            for i in range(await resources_links.count()):
-                link = await resources_links.nth(i).get_attribute("href")
-                if extension_pattern.search(link):
-                    file_links.append(link)
+        if material_match and course_match:
+            material_id = material_match.group(1)
+            course_id = course_match.group(1)
+            api_resources = f"https://api.platzi.com/materials/v1/{material_id}/course/{course_id}/links-files/"
+            resources_data = await get_resources(page, api_resources)
+
+            if resources_data:
+                file_links = [
+                    {"name": archivo.get("name"), "url": archivo.get("archive")}
+                    for archivo in resources_data.get("files", [])
+                    if archivo.get("archive")
+                ]
+
+                readings_links = [
+                    {"title": lectura.get("title"), "url": lectura.get("link")}
+                    for lectura in resources_data.get("links", [])
+                    if lectura.get("link")
+                ]
+            else:
+                file_links = []
+                readings_links = []
 
         time.sleep(5)
 
         # Get material content if it exists
         material_content = page.locator(MATERIAL_CONTENT)
         if await material_content.count() > 0:
-            all_css_styles: list[str] = []
-
             summary_section = await material_content.evaluate("el => el.outerHTML")
 
             # Find all CSS selectors to include in the html_summary template
+            all_css_styles: list[str] = []
             stylesheet_links = page.locator("link[rel=stylesheet]")
             count = await stylesheet_links.count()
             for i in range(count):
@@ -228,13 +238,16 @@ async def get_unit(context: BrowserContext, url: str) -> Unit:
                         color: white;
                         margin-bottom: 20px;
                     }}
+                    body {{
+                        padding: 20px;
+                        max-width: 800px;
+                        margin: 0 auto;
+                    }}
                 </style>
             </head>
-            <body>
-                <div class="general-container">
-                    <h1 class="title-header">{title}</h1>
-                    {summary_section}
-                </div>
+            <body data-theme="sinapsis-dark">
+                <h3 class="title-header">{title}</h3>
+                {summary_section}
             </body>
             </html>"""
 
